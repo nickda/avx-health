@@ -1,0 +1,9 @@
+{
+  "name": "aviatrix-mcp-skills",
+  "description": "Claude Code skills for Aviatrix fabric health analysis via the Aviatrix MCP server",
+  "version": "1.0.0",
+  "author": {
+    "name": "nickda"
+  },
+  "skills": "./skills/"
+}
