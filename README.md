@@ -43,7 +43,7 @@ Live health check across an Aviatrix fabric. Runs a tiered parallel sweep using 
 
 ```bash
 # Clone this repo
-git clone https://github.com/nicholasdavitashvili/public-skills.git ~/.claude/plugins/aviatrix-mcp-skills
+git clone https://github.com/nickda/public-skills.git ~/.claude/plugins/aviatrix-mcp-skills
 
 # Restart Claude Code — skills appear as /avx-health automatically
 ```
