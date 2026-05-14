@@ -31,6 +31,18 @@ Invoked as `/avx-health`, the skill runs a tiered parallel sweep using `aviatrix
 /avx-health perf        Gateway CPU%, memory%, and throughput
 ```
 
+## Try the demo
+
+No sign-up required. The Aviatrix MCP server includes a demo environment pointing at a live fabric.
+
+**Paste this into your AI agent:**
+
+> Fetch my Aviatrix MCP demo config from `https://platform.mcp.aviatrix.com/auth/demo-config` (POST, no body). Add the returned config to my MCP client settings, then run `/avx-health` to sweep the demo fabric.
+
+For the interactive version (with a binary CAPTCHA to prove you're a robot), visit [platform-login.mcp.aviatrix.com/login/agent-signup](https://platform-login.mcp.aviatrix.com/login/agent-signup).
+
+Demo configs are rate-limited to 10 requests/hour per IP.
+
 ## Prerequisites
 
 - An agentic MCP client that supports the SKILL.md skill format
