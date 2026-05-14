@@ -1,6 +1,6 @@
 # avx-health
 
-A SKILL.md skill for running live health sweeps against an [Aviatrix](https://aviatrix.ai) network fabric via the Aviatrix MCP server.
+A SKILL.md skill for running live health sweeps against an [Aviatrix](https://aviatrix.ai) network fabric via the [Aviatrix MCP server](https://platform-login.mcp.aviatrix.com).
 
 Works with any agentic MCP client that supports the SKILL.md skill format (Claude Code, and others).
 
