@@ -2,8 +2,8 @@
 name: avx-health
 description: "Aviatrix fabric health sweep via aviatrix_* MCP. Checks gateways, S2C, BGP, DCF, IPS, traffic, audit. Use when network seems off, pre-demo check needed, or asking if everything's ok. RAG scorecard with numbered findings and investigation playbooks. Not for tracelog analysis or hardening audits."
 user-invocable: true
-argument-hint: '[--deep] [bgp|dcf|traffic|s2c|audit|perf]'
-version: 1.2.0
+argument-hint: '[--deep] [--pdf] [bgp|dcf|traffic|s2c|audit|perf]'
+version: 1.3.0
 status: active
 depends-on: []
 feeds-into: [avx-tshoot]
@@ -20,6 +20,7 @@ against the `aviatrix_*` MCP tools — no tracelogs, no CLI, no manual steps.
 ```
 /avx-health             full sweep (Tier 1 + Tier 2)
 /avx-health --deep      full sweep + Tier 3 container health per gateway
+/avx-health --pdf       full sweep + PDF export (type "done" or "q" when finished investigating)
 /avx-health bgp         BGP sessions only
 /avx-health dcf         DCF enforcement + log freshness only
 /avx-health traffic     FlowIQ top talkers only
@@ -181,6 +182,10 @@ If everything is green: `All checks passed. No findings.`
 The user responds with numbers ("1 3"), "all", or a finding name. After each investigation,
 show which findings remain open and ask what to investigate next.
 
+When `--pdf` is active, also accept `done` or `q` as a signal to close the session and generate
+the PDF. Display this hint below the finding list when `--pdf` is active:
+`Type a finding number to investigate, or "done"/"q" to generate PDF.`
+
 ---
 
 ## Investigation playbooks
@@ -263,6 +268,58 @@ gateway's full syslog.
 
 ---
 
+## PDF export (`--pdf`)
+
+When `--pdf` is passed, accumulate all output emitted during the run in a markdown buffer
+(scorecard + all investigations). When the user types `done` or `q`, fire the PDF pipeline.
+
+### Step 1: build exec summary
+
+Compose this block as the first section of the document:
+
+```
+## Executive Summary
+
+**Controller:** <controller_url>
+**Swept:** <YYYY-MM-DD HH:MM UTC>
+**Overall status:** 🔴 CRITICAL
+
+| Severity    | Count |
+|-------------|-------|
+| 🔴 Critical | N     |
+| 🟡 Warning  | N     |
+| ✅ Green    | N     |
+
+**Key findings:**
+- <one-liner per 🔴 and 🟡 finding only; omit green domains>
+```
+
+### Step 2: write markdown to /tmp
+
+Write `/tmp/avx-health-<YYYY-MM-DD-HHMMSS>.md` containing:
+1. Exec summary (Step 1)
+2. Full scorecard (verbatim)
+3. All investigation outputs (verbatim, in order triggered)
+
+### Step 3: invoke /make-pdf
+
+```
+/make-pdf generate --cover --toc \
+  --title "Aviatrix Fabric Health Report" \
+  --author "avx-health" \
+  --date "<YYYY-MM-DD>" \
+  /tmp/avx-health-<timestamp>.md \
+  /tmp/avx-health-<timestamp>.pdf
+```
+
+### Step 4: print path
+
+```
+PDF saved: /tmp/avx-health-2026-05-14-143022.pdf
+```
+
+---
+
 ## Constraints
 
 - **Port 443 only.** No raw TCP sockets, no external DNS, no WHOIS. IP classification uses
@@ -276,3 +333,6 @@ gateway's full syslog.
   has no timestamp, use `aviatrix_search_dcf_audit` with a 7d window as the freshness check.
 - **`--deep` gateway count warning.** If the fabric has >10 gateways and `--deep` is passed,
   tell the user how many syslog calls will be made and confirm before proceeding.
+- **`--pdf` buffer.** When `--pdf` is active, accumulate all output in a markdown buffer during
+  the run. Write the file only when the user types `done` or `q`. Do not write intermediate
+  files mid-investigation.
