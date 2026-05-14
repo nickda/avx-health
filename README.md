@@ -34,8 +34,8 @@ Invoked as `/avx-health`, the skill runs a tiered parallel sweep using `aviatrix
 ## Prerequisites
 
 - An agentic MCP client that supports the SKILL.md skill format
-- Aviatrix MCP server configured in your client
-- An Aviatrix MCP API key with at minimum `controller:read` scope
+- Aviatrix MCP server configured in your client (`https://platform.mcp.aviatrix.com/mcp`)
+- An Aviatrix MCP API key with at minimum `controller:read` scope — generate one at [platform-login.mcp.aviatrix.com](https://platform-login.mcp.aviatrix.com)
 
 ## Installation
 
