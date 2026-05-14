@@ -1,25 +1,25 @@
-# Aviatrix MCP Skills for Claude Code
+# avx-health
 
-Claude Code skills for operating Aviatrix network fabric via the [Aviatrix MCP server](https://mcp.aviatrix.com).
+A SKILL.md skill for running live health sweeps against an [Aviatrix](https://aviatrix.ai) network fabric via the Aviatrix MCP server.
 
-## Skills
+Works with any agentic MCP client that supports the SKILL.md skill format (Claude Code, and others).
 
-### `/avx-health` — Fabric Health Sweep
+## What it does
 
-Live health check across an Aviatrix fabric. Runs a tiered parallel sweep using `aviatrix_*` MCP tools and emits a RAG scorecard with numbered findings and investigation playbooks.
+Invoked as `/avx-health`, the skill runs a tiered parallel sweep using `aviatrix_*` MCP tools and emits a RAG scorecard with numbered findings and investigation playbooks.
 
-**Checks:**
+**Domains checked:**
 - Gateway up/down/degraded status
 - Site-to-Cloud tunnel health
 - DCF (Distributed Cloud Firewall) enforcement coverage and log freshness
 - IPS/Suricata alert volume and severity
-- FlowIQ traffic pipeline health and anomaly detection
+- FlowIQ traffic pipeline health and top-talker anomaly detection
 - BGP session state and uptime
 - Audit trail freshness
-- Container health (opt-in)
-- Gateway CPU, memory, and throughput
+- Container health (opt-in, `--deep`)
+- Gateway CPU, memory, and throughput (`perf`)
 
-**Invocation:**
+**Invocation patterns:**
 ```
 /avx-health             full sweep
 /avx-health --deep      full sweep + container health per gateway
@@ -33,27 +33,25 @@ Live health check across an Aviatrix fabric. Runs a tiered parallel sweep using 
 
 ## Prerequisites
 
-- [Claude Code](https://claude.ai/code) CLI installed
-- [Aviatrix MCP server](https://mcp.aviatrix.com) configured in your Claude Code environment
+- An agentic MCP client that supports the SKILL.md skill format
+- Aviatrix MCP server configured in your client
 - An Aviatrix MCP API key with at minimum `controller:read` scope
 
 ## Installation
 
-### As a Claude Code plugin (recommended)
+### Plugin install (Claude Code)
 
 ```bash
-# Clone this repo
 git clone https://github.com/nickda/avx-health.git ~/.claude/plugins/avx-health
-
-# Restart Claude Code — skills appear as /avx-health automatically
+# Restart your client — /avx-health appears automatically
 ```
 
 ### Manual
 
-Copy `skills/avx-health/SKILL.md` into your Claude Code skills directory and invoke via `/avx-health`.
+Copy `skills/avx-health/SKILL.md` into your client's skills directory.
 
 ## Notes
 
-- The skill auto-detects which MCP server prefix to use (`mcp__*__aviatrix_list_gateways`) — works against dev, staging, production, and customer environments without hardcoding.
-- FireNet-enabled transits are accounted for: enforcement gaps on spokes routing through a vendor firewall are not scored as findings.
+- Auto-detects MCP server prefix (`mcp__*__aviatrix_list_gateways`) — works against any environment without hardcoding.
+- FireNet-aware: enforcement gaps on spokes routing through a vendor firewall are not scored as findings.
 - All tool calls use HTTPS port 443 only, matching Aviatrix MCP server egress policy.
