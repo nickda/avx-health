@@ -35,23 +35,30 @@ Invoked as `/avx-health`, the skill runs a tiered parallel sweep using `aviatrix
 
 - An agentic MCP client that supports the SKILL.md skill format
 - Aviatrix MCP server configured in your client (`https://platform.mcp.aviatrix.com/mcp`)
-- An Aviatrix MCP API key with at minimum `controller:read` scope — generate one at [platform-login.mcp.aviatrix.com](https://platform-login.mcp.aviatrix.com)
+- An Aviatrix MCP API key with at minimum `controller:read` scope; generate one at [platform-login.mcp.aviatrix.com](https://platform-login.mcp.aviatrix.com)
 
 ## Installation
 
-### Plugin install (Claude Code)
+### Clone and symlink (stays up to date)
 
 ```bash
-git clone https://github.com/nickda/avx-health.git ~/.claude/plugins/avx-health
-# Restart your client — /avx-health appears automatically
+git clone https://github.com/nickda/avx-health.git
+mkdir -p ~/.claude/skills/avx-health
+ln -s "$(pwd)/avx-health/SKILL.md" ~/.claude/skills/avx-health/SKILL.md
 ```
 
-### Manual
+### One-liner
 
-Copy `skills/avx-health/SKILL.md` into your client's skills directory.
+```bash
+mkdir -p ~/.claude/skills/avx-health
+curl -fsSL https://raw.githubusercontent.com/nickda/avx-health/main/SKILL.md \
+  -o ~/.claude/skills/avx-health/SKILL.md
+```
+
+Restart your client after installing; `/avx-health` appears automatically.
 
 ## Notes
 
-- Auto-detects MCP server prefix (`mcp__*__aviatrix_list_gateways`) — works against any environment without hardcoding.
+- Auto-detects MCP server prefix (`mcp__*__aviatrix_list_gateways`), works against any environment without hardcoding.
 - FireNet-aware: enforcement gaps on spokes routing through a vendor firewall are not scored as findings.
 - All tool calls use HTTPS port 443 only, matching Aviatrix MCP server egress policy.
