@@ -33,13 +33,17 @@ Invoked as `/avx-health`, the skill runs a tiered parallel sweep using `aviatrix
 
 ## Try the demo
 
-No sign-up required. The Aviatrix MCP server includes a demo environment pointing at a live fabric.
+No sign-up required. Run this to configure your MCP client and start immediately:
 
-**Paste this into your AI agent:**
+```bash
+# Claude Code: writes .mcp.json in the current directory
+curl -s -X POST https://platform.mcp.aviatrix.com/auth/demo-config \
+  | jq '.configs["claude-code"]' > .mcp.json
+```
 
-> Fetch my Aviatrix MCP demo config from `https://platform.mcp.aviatrix.com/auth/demo-config` (POST, no body). Add the returned config to my MCP client settings, then run `/avx-health` to sweep the demo fabric.
+Restart your client, then run `/avx-health` to sweep the demo fabric.
 
-For the interactive version (with a binary CAPTCHA to prove you're a robot), visit [platform-login.mcp.aviatrix.com/login/agent-signup](https://platform-login.mcp.aviatrix.com/login/agent-signup).
+For other clients (Claude Desktop, Cursor, Windsurf, Cline), or to skip `jq`, visit [platform-login.mcp.aviatrix.com/login/agent-signup](https://platform-login.mcp.aviatrix.com/login/agent-signup) for ready-to-paste configs.
 
 Demo configs are rate-limited to 10 requests/hour per IP.
 
