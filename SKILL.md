@@ -1,9 +1,9 @@
 ---
 name: avx-health
-description: "Aviatrix fabric health sweep via aviatrix_* MCP. Checks gateways, S2C, BGP, DCF, IPS, traffic, audit. Use when network seems off, pre-demo check needed, or asking if everything's ok. RAG scorecard with numbered findings and investigation playbooks. Not for tracelog analysis or hardening audits."
+description: "Aviatrix fabric health sweep via aviatrix_* MCP. Checks gateways, S2C, BGP, DCF, IPS, traffic, audit, FireNet. Use when network seems off, pre-demo check needed, or asking if everything's ok. RAG scorecard with numbered findings and investigation playbooks. Not for tracelogs or hardening audits."
 user-invocable: true
-argument-hint: '[--deep] [--pdf] [bgp|dcf|traffic|s2c|audit|perf]'
-version: 1.3.0
+argument-hint: '[--deep] [--pdf] [bgp|dcf|traffic|s2c|audit|perf|logs|firenet]'
+version: 1.4.0
 status: active
 depends-on: []
 feeds-into: [avx-tshoot]
@@ -22,11 +22,13 @@ against the `aviatrix_*` MCP tools — no tracelogs, no CLI, no manual steps.
 /avx-health --deep      full sweep + Tier 3 container health per gateway
 /avx-health --pdf       full sweep + PDF export (type "done" or "q" when finished investigating)
 /avx-health bgp         BGP sessions only
-/avx-health dcf         DCF enforcement + log freshness only
+/avx-health dcf         DCF enforcement + log freshness only (also calls aviatrix_list_firenet_inspection for exclusion)
 /avx-health traffic     FlowIQ top talkers only
 /avx-health s2c         S2C tunnel status only
 /avx-health audit       Audit trail freshness only
 /avx-health perf        Gateway CPU%, memory%, and throughput — all gateway types (spoke/transit/edge)
+/avx-health firenet     FireNet inspection coverage — which transits, which spokes inspected
+/avx-health logs        Pull recent controller command log entries; optionally search for a pattern
 ```
 
 **MCP server detection:** Look at available tools — find the one that matches
@@ -54,6 +56,7 @@ after Tier 2. Only run Tier 3 if `--deep` was passed.
 | `aviatrix_list_gateways` | Gateway up/down/degraded status |
 | `aviatrix_list_s2c_connections` | S2C tunnel status |
 | `aviatrix_get_dcf_enforced_gateways` | Which spokes have DCF enforcement active |
+| `aviatrix_list_firenet_inspection` | Which transit GWs have FireNet active; which spokes are inspected vs not. Use this data in DCF enforcement scoring — spokes in `inspected` lists are covered by a third-party FW and should not be flagged as DCF enforcement gaps. |
 | `aviatrix_get_detected_intrusions` | IPS/Suricata alerts (last 24h) |
 | `aviatrix_get_flowiq_top_talkers` | Top external destinations + internal sources (7d). Check `boundary_at_start` in response — `true` means FlowIQ aggregation index has no data for this window (pipeline broken/stale). If `true`, call `aviatrix_get_top_egress(category=ips, ...)` and `aviatrix_get_top_egress(category=urls, ...)` for the same 7d window as a DCF-log-based fallback. Note in scorecard: source is firewall logs (top-10 truncated; counts not volumetric). |
 | `aviatrix_get_dcf_audit_summary` | Last DCF config change event (audit trail freshness) |
@@ -90,6 +93,32 @@ gw-spoke-west-prod    CPU [=========           ] 45%  Mem [============        ]
 Formula: `bar_len = round(value / 100 * 20)`. Clamp to [0, 20].
 Metadata line: type, account, region, RX, TX — all on a single indented line below the bar line.
 
+### `firenet` invocation — standalone only
+
+Call `aviatrix_list_firenet_inspection` and emit a structured summary:
+
+```
+FireNet Inspection Coverage
+transit-gw-east    [egress inspection]
+  Inspected (3): spoke-a, spoke-b, spoke-c
+  Not inspected (1): spoke-dev
+
+transit-gw-west
+  Inspected (2): spoke-d, spoke-e
+  Not inspected (0): —
+```
+
+List every transit returned. Mark egress inspection transits explicitly. If the tool returns
+no entries, emit: `No FireNet-enabled transit gateways found.` Not scored — informational only.
+
+### `logs` invocation — standalone only
+
+1. Call `aviatrix_get_controller_logs` with `max_lines=200` (default).
+2. Optionally, if the user passed a search term after `logs` (e.g. `/avx-health logs bgp`), also call `aviatrix_search_controller_logs(search_pattern=<term>, max_lines=200)` and display matches separately.
+3. Emit the raw log block as returned by the tool. No scoring, no thresholds.
+
+Use `aviatrix_search_controller_logs` inside investigation playbooks to correlate controller-side events with a specific finding (e.g. search for a gateway name, action keyword like "bgp", or timestamp range).
+
 ---
 
 ### Tier 3 — only with `--deep`, parallel
@@ -106,7 +135,8 @@ Metadata line: type, account, region, RX, TX — all on a single indented line b
 |---|---|---|---|
 | Gateways | All up | 1-2 down/degraded | 3+ down |
 | S2C Tunnels | All up | 1-2 down | 3+ down or >20% of total |
-| DCF Enforcement | All spokes enforced | 1-2 unenforced (named) | 3+ unenforced |
+| DCF Enforcement | All non-FireNet spokes enforced | 1-2 unenforced (named) | 3+ unenforced |
+| FireNet Coverage | Informational — no pass/fail threshold | — | — |
 | IPS Alerts | 0 alerts (24h) | 1-5, or high-volume with single benign signature | 6+ diverse signatures, or any blocked/high-severity alert |
 | FlowIQ Pipeline | `boundary_at_start: false`, data current | Data gap 1-7d | `boundary_at_start: true` (>7d gap or pipeline broken) |
 | Traffic Anomalies | All top IPs = known CDN/cloud | Unknown IPs present | Unknown IP >1 GB |
@@ -115,7 +145,7 @@ Metadata line: type, account, region, RX, TX — all on a single indented line b
 | DCF Log Freshness | Logs in last 24h per enforced GW | Last log 24h-7d ago | Enforced GW with 0 logs or >7d gap |
 | Container Health (`--deep`) | No restarts | Restarts <10 | Restarts >100 (crash-loop) |
 
-**FireNet exception:** Spokes whose traffic routes through a FireNet-enabled transit are inspected by a third-party firewall (Palo Alto, Fortinet, CheckPoint) instead of native Aviatrix DCF. Enforcement gaps on these spokes are expected and should not be scored as findings. There is no API in this sweep to detect FireNet status — if DCF enforcement gaps are present, ask the user whether the affected spokes attach to a FireNet transit before escalating.
+**FireNet and DCF enforcement:** Spokes listed in the `inspected` field of `aviatrix_list_firenet_inspection` results are covered by a third-party firewall (Palo Alto, Fortinet, CheckPoint). They must not be counted as DCF enforcement gaps — vendor FW handles inspection. Exclude them before computing the DCF Enforcement score. Include a FireNet Coverage row in the scorecard showing how many transit GWs have FireNet active and how many spokes are under vendor inspection. In `dcf` standalone mode (not full sweep), always call `aviatrix_list_firenet_inspection` first so the exclusion list is available before scoring.
 
 **IPS alert scoring uses homogeneity:** 2000 identical alerts all permitted (e.g. same ET POLICY signature, zero blocks) = amber. Ten alerts across different signatures with any block action = red. Count alone doesn't determine severity — signature diversity and action (permit vs block) do.
 
@@ -162,6 +192,7 @@ After Tier 2 (or after each domain for single-domain runs), emit:
 | Gateways           | ✅     | 12/12 up                                           |
 | S2C Tunnels        | ✅     | 8/8 up                                             |
 | DCF Enforcement    | 🟡     | marketing-azure-spoke-all: no enforcement          |
+| FireNet Coverage   | ℹ️     | 1 transit (transit-fw-east): 3 spokes inspected    |
 | IPS Alerts         | ✅     | 0 alerts (24h)                                     |
 | FlowIQ Pipeline    | 🔴     | boundary_at_start: true — no data since 2026-05-01  |
 | Traffic Anomalies  | 🟡     | 47.91.64.21 (Alibaba, 14 GB) — unknown dependency  |
@@ -241,18 +272,20 @@ the triggering event (upgrade, config change, network change).
 
 ### DCF enforcement gap
 
-0. **FireNet check first:** Ask the user whether the unenforced gateway's traffic routes through a FireNet-enabled transit. If yes, native DCF enforcement is not needed (vendor FW handles inspection) — close this finding without further investigation.
-1. Call `aviatrix_get_dcf_gateway_rules` for each unenforced gateway
+0. **FireNet check from Tier 1 data:** Cross-reference each unenforced gateway against the `inspected` lists returned by `aviatrix_list_firenet_inspection` (already collected in Tier 1). If the gateway appears in an `inspected` list, vendor FW handles inspection — close this finding, note which FireNet transit covers it. Only proceed to steps 1-3 for gateways not in any FireNet `inspected` list.
+1. Call `aviatrix_get_dcf_gateway_rules` for each genuinely unenforced gateway (not FireNet-covered)
 2. Distinguish: (a) enforcement disabled + rules exist = enforcement was turned off, (b) enforcement disabled + no rules = was never configured
-3. Report gap type, rule count, and whether this appears intentional (test/dev spoke with no policies is different from a prod spoke that had enforcement then lost it)
+3. Call `aviatrix_search_controller_logs(search_pattern=<gw_name>)` to check whether a recent API call (e.g. enforcement disable, policy change) correlates with when the gap appeared
+4. Report gap type, rule count, any correlating controller log events, and whether this appears intentional (test/dev spoke with no policies is different from a prod spoke that had enforcement then lost it)
 
 ### BGP session short uptime or down
 
 1. Call `aviatrix_run_bgp_diag` on the flagged gateway for full neighbor detail. On transit gateways, heavy commands (`show ip bgp`, `show ip route bgp`, `show running`) return a `job_id` instead of inline output — poll `aviatrix_get_bgp_diag_result(job_id=...)` every 15s until status is `complete` or `error`. Fast commands (`show ip bgp summary`, `show ip bgp neighbors`) always return synchronously.
 2. Call `aviatrix_get_gateway_performance` with `gateway_names=[suspect_gw]` — high CPU can cause BGP hold-timer expiry even when the session appears "up"
-3. Check: neighbor state, prefix counts received/sent, uptime, BFD presence
-4. Flag independently: no BFD (failover takes up to hold-timer seconds, typically 9s); fragmented /28 prefixes where a supernet would do; asymmetric prefix counts between sessions
-5. Report: peer AS, current uptime, BFD state, CPU/memory at investigation time, any prefix anomalies
+3. Call `aviatrix_search_controller_logs(search_pattern=<gw_name>)` — look for recent gateway operations (upgrade, config push, HA event) that may have triggered the session reset. Short uptime + recent controller action = likely cause.
+4. Check: neighbor state, prefix counts received/sent, uptime, BFD presence
+5. Flag independently: no BFD (failover takes up to hold-timer seconds, typically 9s); fragmented /28 prefixes where a supernet would do; asymmetric prefix counts between sessions
+6. Report: peer AS, current uptime, BFD state, CPU/memory at investigation time, any controller log events near the session start time, any prefix anomalies
 
 ### S2C tunnel down
 
