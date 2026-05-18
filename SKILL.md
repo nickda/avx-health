@@ -3,7 +3,7 @@ name: avx-health
 description: "Aviatrix fabric health sweep via aviatrix_* MCP. Checks gateways, S2C, BGP, DCF, IPS, traffic, audit, FireNet. Use when network seems off, pre-demo check needed, or asking if everything's ok. RAG scorecard with numbered findings and investigation playbooks. Not for tracelogs or hardening audits."
 user-invocable: true
 argument-hint: '[--deep] [--pdf] [bgp|dcf|traffic|s2c|audit|perf|logs|firenet]'
-version: 1.5.0
+version: 1.5.1
 status: active
 depends-on: []
 feeds-into: [avx-tshoot]
@@ -389,3 +389,10 @@ PDF saved: /tmp/avx-health-2026-05-14-143022.pdf
 - **`--pdf` buffer.** When `--pdf` is active, accumulate all output in a markdown buffer during
   the run. Write the file only when the user types `done` or `q`. Do not write intermediate
   files mid-investigation.
+- **Docs lookup (last resort).** If a feature name, flag, or setting encountered in live tool
+  output is not covered by these playbooks, run `WebSearch("site:docs.aviatrix.com <term>")` then
+  `WebFetch` the top result. Cap: 1 search + 1 fetch per ambiguity. Do not fetch for anything
+  already covered by inline playbook text. Synthesize the result into the finding; do not dump
+  raw HTML. Check the controller version (major.minor) against any version tag in the docs URL
+  or page — if they differ, note: "docs found for vX.Y; controller is vA.B — verify
+  applicability." If no relevant docs page is found, note the gap and proceed with available data.
