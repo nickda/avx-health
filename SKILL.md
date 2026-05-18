@@ -3,7 +3,7 @@ name: avx-health
 description: "Aviatrix fabric health sweep via aviatrix_* MCP. Checks gateways, S2C, BGP, DCF, IPS, traffic, audit, FireNet. Use when network seems off, pre-demo check needed, or asking if everything's ok. RAG scorecard with numbered findings and investigation playbooks. Not for tracelogs or hardening audits."
 user-invocable: true
 argument-hint: '[--deep] [--pdf] [bgp|dcf|traffic|s2c|audit|perf|logs|firenet]'
-version: 1.4.0
+version: 1.5.0
 status: active
 depends-on: []
 feeds-into: [avx-tshoot]
@@ -223,9 +223,16 @@ the PDF. Display this hint below the finding list when `--pdf` is active:
 
 ### DCF log gap (enforced GW, no recent logs)
 
-An enforced gateway with no recent logs almost always means the `avx-gw-trafficserver`
-container is crash-looping — the gateway keeps restarting it, burning cycles but never
-staying up long enough to emit logs.
+Two root causes account for most DCF log gaps. Determine which applies before
+investigating further.
+
+**Step 0 — establish the cutoff date:**
+Call `aviatrix_count_dcf_logs` with progressively older windows (24h, 7d, 30d, 90d) across
+all enforced gateways. Identify the point where count drops to 0. Note the pattern:
+- **Same cutoff date across all gateways** — fabric-level event (feature flag, upgrade, CoPilot restart). Go to Branch B first.
+- **Different cutoff dates per gateway** — per-gateway failure (crash-loop most likely). Go to Branch A.
+
+**Branch A — Crash-loop:**
 
 1. Call `aviatrix_get_gateway_performance` with `gateway_names=[suspect_gw]` — high CPU (>85%) or memory pressure alongside a log gap strengthens the crash-loop diagnosis
 2. Call `aviatrix_search_gateway_syslogs` on the named gateway, search term `avx-gw-trafficserver`
@@ -234,6 +241,19 @@ staying up long enough to emit logs.
 5. Extract: container image version, exit code (SIGABRT = code 134/n/a, clean shutdown = 0)
 6. Estimate incident start: restart_count × avg_cycle_time, working backward from now
 7. Report findings + recommend escalation to Aviatrix support with gateway name, container version, and CPU/memory at time of investigation
+
+**Branch B — Observability sink diversion (8.2+ build, single cutoff, all gateways):**
+
+Controller 8.2 introduced a `dcf_logs_obs_sink` feature flag that diverts DCF logs from
+the traditional rsyslog profile 9 pathway to a newer delivery channel. If enabled but the
+obs_sink delivery channel fails, all logs stop silently while rsyslog appears correctly
+configured.
+
+1. Call `aviatrix_search_controller_logs(search_pattern="dcf_logs_obs_sink", max_lines=200)` — if a feature_info dump appears in the log with `enabled: true`, this flag is active. Absence of the dump does not rule it out; it only surfaces when the controller logs a periodic feature dump.
+2. Call `aviatrix_search_controller_logs(search_pattern="conduit", max_lines=200)` — look for obs_sink delivery errors or handoff failures
+3. Cross-reference the cutoff date against known events: controller upgrade to 8.2, CoPilot migration, direct API calls outside Terraform
+4. If `dcf_logs_obs_sink: enabled=true` is confirmed: surface the finding and this resolution path to the customer's Aviatrix admin — the flag can be disabled via `POST /v2/api action=enable_feature feature_name=dcf_logs_obs_sink enable=false`. This is a controller API call outside MCP scope; recommend they test it and open an Aviatrix support ticket referencing the flag and controller build.
+5. If obs_sink is active and the delivery channel is the intended path (not a regression): check that CoPilot OTEL receiver (TCP 31284) is reachable from gateway EIPs — NSG blocking this port silently drops all obs_sink delivery.
 
 ### Audit trail stale
 
