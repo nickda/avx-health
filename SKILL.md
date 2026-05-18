@@ -221,6 +221,8 @@ the PDF. Display this hint below the finding list when `--pdf` is active:
 
 ## Investigation playbooks
 
+Each playbook ends with a **Resolution signal** — the minimal tool call that confirms the issue is resolved. Do not close a finding until the signal is green.
+
 ### DCF log gap (enforced GW, no recent logs)
 
 Two root causes account for most DCF log gaps. Determine which applies before
@@ -255,12 +257,16 @@ configured.
 4. If `dcf_logs_obs_sink: enabled=true` is confirmed: surface the finding and this resolution path to the customer's Aviatrix admin — the flag can be disabled via `POST /v2/api action=enable_feature feature_name=dcf_logs_obs_sink enable=false`. This is a controller API call outside MCP scope; recommend they test it and open an Aviatrix support ticket referencing the flag and controller build.
 5. If obs_sink is active and the delivery channel is the intended path (not a regression): check that CoPilot OTEL receiver (TCP 31284) is reachable from gateway EIPs — NSG blocking this port silently drops all obs_sink delivery.
 
+**Resolution signal:** `aviatrix_count_dcf_logs` on the affected gateway with a 24h window returns > 0.
+
 ### Audit trail stale
 
 1. Call `aviatrix_search_dcf_audit` with 30d window; if 0 results, try 90d; if still 0, try all-time
 2. Check user attribution across returned events — is the `user` field populated or always empty?
 3. Report: last event date, total events all-time, user attribution quality, estimated stale duration
 4. If all-time returns 0 events: CoPilot audit logging may never have been enabled or was disabled
+
+**Resolution signal:** `aviatrix_get_dcf_audit_summary` returns at least one event within the last 7 days.
 
 ### FlowIQ pipeline broken (`boundary_at_start: true`)
 
@@ -280,6 +286,8 @@ the triggering event (upgrade, config change, network change).
 5. Report: cutoff date, likely trigger, fix required (CoPilot setting change or NSG rule).
 6. **DCF-log fallback while FlowIQ is down:** Call `aviatrix_get_top_egress(category=ips, start_time=<window_start>, end_time=<now>)` and `category=urls` in parallel. This aggregates over CoPilot DCF firewall logs (not netflow) — top-10 rank-truncated, volume counts not representative of full traffic. Only useful if DCF enforcement is active on at least some spokes. Report as supplemental visibility, not a replacement for FlowIQ.
 
+**Resolution signal:** `aviatrix_get_flowiq_top_talkers` returns `boundary_at_start: false` and a non-empty result set for the original failing window.
+
 ### Traffic anomaly (unknown external IP)
 
 1. Call `aviatrix_get_flowiq_top_talkers` with `by_gateway=true` to find which spoke(s) originate the traffic
@@ -290,6 +298,8 @@ the triggering event (upgrade, config change, network change).
 6. Report: volume, originating spokes, internal source IPs (east-west), owning VMs (from step 3), ASN owner, whether DCF covers those spokes
 7. If DCF enforced on spoke but logs = 0 for this IP: flag as potential inspection gap — DCF may be up but the inspection container may be silently failing
 
+**Resolution signal:** Re-run `aviatrix_get_flowiq_top_talkers` for the same window; the IP now resolves to a known CDN/cloud owner, or volume has dropped to noise level. If the concern was unmanaged internal source traffic: the owning VM identified in step 3 has been reviewed by the customer.
+
 ### DCF enforcement gap
 
 0. **FireNet check from Tier 1 data:** Cross-reference each unenforced gateway against the `inspected` lists returned by `aviatrix_list_firenet_inspection` (already collected in Tier 1). If the gateway appears in an `inspected` list, vendor FW handles inspection — close this finding, note which FireNet transit covers it. Only proceed to steps 1-3 for gateways not in any FireNet `inspected` list.
@@ -297,6 +307,8 @@ the triggering event (upgrade, config change, network change).
 2. Distinguish: (a) enforcement disabled + rules exist = enforcement was turned off, (b) enforcement disabled + no rules = was never configured
 3. Call `aviatrix_search_controller_logs(search_pattern=<gw_name>)` to check whether a recent API call (e.g. enforcement disable, policy change) correlates with when the gap appeared
 4. Report gap type, rule count, any correlating controller log events, and whether this appears intentional (test/dev spoke with no policies is different from a prod spoke that had enforcement then lost it)
+
+**Resolution signal:** `aviatrix_get_dcf_enforced_gateways` lists the gateway as enforced, or `aviatrix_get_dcf_gateway_rules` shows at least one active rule with enforcement enabled on the gateway.
 
 ### BGP session short uptime or down
 
@@ -307,11 +319,15 @@ the triggering event (upgrade, config change, network change).
 5. Flag independently: no BFD (failover takes up to hold-timer seconds, typically 9s); fragmented /28 prefixes where a supernet would do; asymmetric prefix counts between sessions
 6. Report: peer AS, current uptime, BFD state, CPU/memory at investigation time, any controller log events near the session start time, any prefix anomalies
 
+**Resolution signal:** `aviatrix_run_bgp_diag` on the gateway returns `Established` state with uptime > 7 days (green threshold) and prefix counts consistent with peer expectations.
+
 ### S2C tunnel down
 
 1. Call `aviatrix_run_s2c_diagnostic` on each down connection
 2. If HTTP 403: write-level credentials are required for this tool — fall back to raw status from `aviatrix_list_s2c_connections` and note the access limitation
 3. Report: IKE phase, last error string, rekey timing if visible
+
+**Resolution signal:** `aviatrix_list_s2c_connections` shows `UP` status for the affected tunnel.
 
 ### Container health (`--deep`)
 
@@ -379,6 +395,11 @@ PDF saved: /tmp/avx-health-2026-05-14-143022.pdf
   the `owner` field from `get_flowiq_top_talkers` or `aviatrix_classify_ip` if available.
 - **BGP 500s are normal.** Most gateways don't run BGP (FRR not active). HTTP 500 from
   `aviatrix_run_bgp_diag` = BGP not enabled — suppress silently.
+- **Standalone spokes (no transit) are valid.** A spoke with empty `transit_gw_name` is not a
+  health concern. It may be a NAT egress gateway for a single VPC, a local S2C peer, or
+  intentionally isolated. Do not flag as an issue or finding. If the user explicitly asks for
+  topology detail, note it as: `ℹ️ No transit attachment (standalone spoke)` — informational only,
+  not counted in any score.
 - **S2C diagnostic needs write credentials.** 403 from `aviatrix_run_s2c_diagnostic` means
   the API key has read-only scope. Don't retry; report the limitation and use list data instead.
 - **DCF audit summary time range.** `aviatrix_get_dcf_audit_summary` may not support a time
