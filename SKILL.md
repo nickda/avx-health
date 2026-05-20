@@ -3,7 +3,7 @@ name: avx-health
 description: "Aviatrix fabric health sweep via aviatrix_* MCP. Checks gateways, S2C, BGP, DCF, IPS, traffic, audit, FireNet. Use when network seems off, pre-demo check needed, or asking if everything's ok. RAG scorecard with numbered findings and investigation playbooks. Not for tracelogs or hardening audits."
 user-invocable: true
 argument-hint: '[--deep] [--pdf] [bgp|dcf|traffic|s2c|audit|perf|logs|firenet]'
-version: 1.5.1
+version: 1.5.2
 status: active
 depends-on: []
 feeds-into: [avx-tshoot]
@@ -43,6 +43,22 @@ a server name; this skill runs against dev, stg, prod, and customer environments
 
 ---
 
+## Aviatrix architecture facts
+
+These facts constrain how you interpret diagnostic data. Violating them produces outputs that expert users will immediately distrust.
+
+**Fabric control plane:** Aviatrix Controller programs VPC/VNet route tables via cloud provider APIs. No routing protocol (BGP, OSPF) runs between transit and spoke gateways.
+
+**Transit-to-spoke data plane:** Two IPsec tunnels per spoke (primary + backup transit GW), ECMP load-balanced. This is ActiveMesh. Never describe transit-spoke connectivity problems as "BGP issues."
+
+**BGP = external peering only.** BGP runs between transit/edge gateways and on-prem routers, VGW, or S2C peers. `aviatrix_run_bgp_diag` checks those external sessions. HTTP 500 on a spoke = FRR not active, expected. A down BGP session on a transit GW means the on-prem/VGW peer is affected — not the transit-spoke fabric.
+
+**IPS/IDS (Suricata) = egress only.** DCF's Suricata does not inspect east-west (VPC-to-VPC) traffic. East-west inspection requires FireNet with a vendor appliance. Do not flag absent IPS alerts as east-west inspection gaps.
+
+**FlowIQ = NetFlow Agent dependent.** Pipeline requires: (a) NetFlow Agent enabled in CoPilot Settings → Logging Services, (b) UDP 2055 open from gateway EIPs to CoPilot, (c) `oteld_enabled` matching gateway version (8.2+ = OTEL/TCP; older = UDP 2055 — mismatch = silent data loss). `boundary_at_start: true` is the symptom of any pipeline failure, not just staleness.
+
+---
+
 ## Execution: Tiered parallel sweep
 
 Run Tier 1 first (all calls in parallel — they have no dependencies on each other). Once
@@ -58,14 +74,14 @@ after Tier 2. Only run Tier 3 if `--deep` was passed.
 | `aviatrix_get_dcf_enforced_gateways` | Which spokes have DCF enforcement active |
 | `aviatrix_list_firenet_inspection` | Which transit GWs have FireNet active; which spokes are inspected vs not. Use this data in DCF enforcement scoring — spokes in `inspected` lists are covered by a third-party FW and should not be flagged as DCF enforcement gaps. |
 | `aviatrix_get_detected_intrusions` | IPS/Suricata alerts (last 24h) |
-| `aviatrix_get_flowiq_top_talkers` | Top external destinations + internal sources (7d). Check `boundary_at_start` in response — `true` means FlowIQ aggregation index has no data for this window (pipeline broken/stale). If `true`, call `aviatrix_get_top_egress(category=ips, ...)` and `aviatrix_get_top_egress(category=urls, ...)` for the same 7d window as a DCF-log-based fallback. Note in scorecard: source is firewall logs (top-10 truncated; counts not volumetric). |
+| `aviatrix_get_flowiq_top_talkers` | Top external destinations + internal sources (7d). Check `boundary_at_start` in response — `true` means FlowIQ aggregation index has no data for this window (pipeline broken/stale). Root cause is always one of: NetFlow Agent disabled in CoPilot, UDP 2055 blocked, or `oteld_enabled` mismatch — see Architecture Facts above. If `true`, call `aviatrix_get_top_egress(category=ips, ...)` and `aviatrix_get_top_egress(category=urls, ...)` for the same 7d window as a DCF-log-based fallback. Note in scorecard: source is firewall logs (top-10 truncated; counts not volumetric). |
 | `aviatrix_get_dcf_audit_summary` | Last DCF config change event (audit trail freshness) |
 
 ### Tier 2 — parallel, uses Tier 1 data
 
 | Call | Purpose |
 |---|---|
-| `aviatrix_run_bgp_diag` on **every** gateway from Tier 1 | BGP session state. HTTP 500 = FRR not running — suppress silently, these gateways don't run BGP. Report only gateways that return data. Cap at 10 concurrent calls. |
+| `aviatrix_run_bgp_diag` on **every** gateway from Tier 1 | External BGP session state (on-prem/VGW peers only — transit-spoke fabric uses IPsec, not BGP). HTTP 500 = FRR not running — suppress silently, expected on most gateways. Report only gateways that return data. Cap at 10 concurrent calls. |
 | `aviatrix_count_dcf_logs` per **enforced** gateway (from Tier 1) | Count of DCF logs in last 24h per gateway. Zero = potential inspection gap or crash-loop. Batch in groups of 10 if >20 enforced gateways. |
 
 ### `perf` invocation — standalone only, not part of default sweep
