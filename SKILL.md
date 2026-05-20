@@ -3,7 +3,7 @@ name: avx-health
 description: "Aviatrix fabric health sweep via aviatrix_* MCP. Checks gateways, S2C, BGP, DCF, IPS, traffic, audit, FireNet. Use when network seems off, pre-demo check needed, or asking if everything's ok. RAG scorecard with numbered findings and investigation playbooks. Not for tracelogs or hardening audits."
 user-invocable: true
 argument-hint: '[--deep] [--pdf] [bgp|dcf|traffic|s2c|audit|perf|logs|firenet]'
-version: 1.5.2
+version: 1.5.3
 status: active
 depends-on: []
 feeds-into: [avx-tshoot]
@@ -53,7 +53,7 @@ These facts constrain how you interpret diagnostic data. Violating them produces
 
 **BGP = external peering only.** BGP runs between transit/edge gateways and on-prem routers, VGW, or S2C peers. `aviatrix_run_bgp_diag` checks those external sessions. HTTP 500 on a spoke = FRR not active, expected. A down BGP session on a transit GW means the on-prem/VGW peer is affected — not the transit-spoke fabric.
 
-**IPS/IDS (Suricata) = egress only.** DCF's Suricata does not inspect east-west (VPC-to-VPC) traffic. East-west inspection requires FireNet with a vendor appliance. Do not flag absent IPS alerts as east-west inspection gaps.
+**IPS/IDS (Suricata) = egress/ingress + east-west only with symmetric routing.** Suricata can inspect east-west traffic, but only when symmetric routing is in place (single gateway per path, no HA gateway groups). In HA deployments — the production norm — east-west IPS is not reliable because return traffic may flow through a different gateway. Do not treat IPS alert absence as proof that east-west traffic is passing uninspected; in HA fabrics, east-west inspection requires FireNet with a vendor appliance.
 
 **FlowIQ = NetFlow Agent dependent.** Pipeline requires: (a) NetFlow Agent enabled in CoPilot Settings → Logging Services, (b) UDP 2055 open from gateway EIPs to CoPilot, (c) `oteld_enabled` matching gateway version (8.2+ = OTEL/TCP; older = UDP 2055 — mismatch = silent data loss). `boundary_at_start: true` is the symptom of any pipeline failure, not just staleness.
 
